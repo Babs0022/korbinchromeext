@@ -21,7 +21,7 @@ export type LLMAssistedContextualActionInput = z.infer<typeof LLMAssistedContext
 
 const LLMAssistedContextualActionOutputSchema = z.object({
   action: z.string().describe('The next action to execute (e.g., click, type, navigate), based on the DOM and project goals.'),
-  actionDetails: z.record(z.any()).describe('Additional details required to execute the action, such as target element or text to type.'),
+  actionDetails: z.any().describe('A JSON object containing details for the action. For "click" or "type", this should include a "selector" key with a CSS selector. For "type", it should also include a "text" key.'),
   reasoning: z.string().describe('The LLM agent reasoning for taking that next action, based on the project goals and the dom inspection.'),
 });
 export type LLMAssistedContextualActionOutput = z.infer<typeof LLMAssistedContextualActionOutputSchema>;
