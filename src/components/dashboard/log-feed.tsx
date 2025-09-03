@@ -1,63 +1,58 @@
 'use client';
 
-import { FileCode, Terminal, Info, AlertTriangle, ShieldQuestion, User, ChevronRight } from 'lucide-react';
+import { FileCode, Terminal, Info, AlertTriangle, ShieldQuestion, User, ChevronRight, Send } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { type LogEntry } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { formatDistanceToNow } from 'date-fns';
 import { useEffect, useRef, useState } from 'react';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-
-const logIcons = {
-  plan: <FileCode className="h-4 w-4 text-muted-foreground" />,
-  action: <Terminal className="h-4 w-4 text-primary" />,
-  info: <Info className="h-4 w-4 text-blue-500" />,
-  error: <AlertTriangle className="h-4 w-4 text-destructive" />,
-  confirmation: <ShieldQuestion className="h-4 w-4 text-accent" />,
-  user: <User className="h-4 w-4 text-green-500" />,
-};
+import { VibePilotAgentIcon } from '../VibePilotLogo';
+import { Avatar, AvatarFallback, AvatarImage } from '../ui/avatar';
 
 
 function LogItem({ log }: { log: LogEntry }) {
   const [isOpen, setIsOpen] = useState(false);
-
+  const isUser = log.type === 'user';
   const hasDetails = log.details?.action && log.details.action !== 'none';
-  
+
   return (
-    <div className="flex items-start gap-4">
-      <div className="mt-1">{logIcons[log.type]}</div>
-      <div className="flex-1">
-        <div className="flex items-center justify-between">
-          <p
-            className={cn(
-              'text-sm',
-              log.type === 'error' && 'text-destructive font-semibold',
-              log.type === 'confirmation' && 'text-accent-foreground dark:text-yellow-400 font-semibold',
-              log.type === 'user' && 'font-semibold',
-            )}
-          >
-            {log.message}
-          </p>
-          <span className="text-xs text-muted-foreground whitespace-nowrap pl-4">
+    <div className={cn("flex items-start gap-3", isUser && "justify-end")}>
+       {!isUser && (
+        <Avatar className="h-8 w-8">
+          <AvatarFallback className="bg-primary text-primary-foreground">
+            <VibePilotAgentIcon className="h-5 w-5" />
+          </AvatarFallback>
+        </Avatar>
+      )}
+      <div className={cn("max-w-md rounded-lg p-3", isUser ? 'bg-primary text-primary-foreground' : 'bg-muted')}>
+        <p className="text-sm">{log.message}</p>
+        <span className={cn("text-xs opacity-70 mt-1 block", isUser ? "text-right" : "text-left")}>
             {formatDistanceToNow(log.timestamp, { addSuffix: true })}
-          </span>
-        </div>
-        {hasDetails && (
+        </span>
+         {hasDetails && (
           <Collapsible open={isOpen} onOpenChange={setIsOpen} className="mt-2">
-            <CollapsibleContent className="mt-1 text-xs text-muted-foreground p-3 bg-muted rounded-md font-code space-y-1">
+            <CollapsibleContent className="mt-2 text-xs p-3 bg-background/50 rounded-md font-code space-y-1">
                 <p><strong>Action:</strong> {log.details.action}</p>
-                <p><strong>Details:</strong> <span className="font-code">{JSON.stringify(log.details.details)}</span></p>
+                <p><strong>Selector:</strong> <span className="font-code">{JSON.stringify(log.details.details?.selector)}</span></p>
                 <p className="mt-1"><strong>Reasoning:</strong> <em>{log.details.reasoning}</em></p>
             </CollapsibleContent>
              <CollapsibleTrigger asChild>
-                <button className="text-xs text-muted-foreground flex items-center gap-1 mt-1 hover:text-foreground">
+                <button className="text-xs flex items-center gap-1 mt-2 hover:underline">
                   <ChevronRight className={cn("h-3 w-3 transition-transform", isOpen && "rotate-90")} />
-                  {isOpen ? 'Hide' : 'Show'} Details
+                  {isOpen ? 'Hide' : 'Show'} technical details
                 </button>
             </CollapsibleTrigger>
           </Collapsible>
         )}
       </div>
+      {isUser && (
+         <Avatar className="h-8 w-8">
+          <AvatarFallback>
+            <User className="h-5 w-5" />
+          </AvatarFallback>
+        </Avatar>
+      )}
     </div>
   )
 }
@@ -74,7 +69,7 @@ export function LogFeed({ logs }: { logs: LogEntry[] }) {
 
   return (
     <ScrollArea className="h-full flex-grow" viewportRef={viewportRef}>
-      <div className="p-4 space-y-4">
+      <div className="p-4 space-y-6">
         {logs.map(log => (
           <LogItem key={log.id} log={log} />
         ))}
