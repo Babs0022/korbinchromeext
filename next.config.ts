@@ -1,5 +1,4 @@
 import type {NextConfig} from 'next';
-import path from 'path';
 
 const nextConfig: NextConfig = {
   output: 'export',
@@ -12,6 +11,7 @@ const nextConfig: NextConfig = {
   },
   images: {},
   webpack: (config, { isServer }) => {
+    // Modify webpack config for background and content scripts
     if (!isServer) {
       config.entry = {
         ...config.entry,
@@ -19,14 +19,16 @@ const nextConfig: NextConfig = {
         content: './src/content/index.ts',
       };
 
-      config.output = {
-        ...config.output,
-        filename: (pathData) => {
-          if (pathData.chunk?.name === 'background' || pathData.chunk?.name === 'content') {
-            return '[name].js';
-          }
-          return config.output.filename;
-        },
+      const originalFilename = config.output.filename;
+      config.output.filename = (pathData) => {
+        if (pathData.chunk?.name === 'background' || pathData.chunk?.name === 'content') {
+          return '[name].js';
+        }
+        // Fallback to the original filename function for other chunks
+        if (typeof originalFilename === 'function') {
+           return originalFilename(pathData);
+        }
+        return originalFilename;
       };
     }
     return config;

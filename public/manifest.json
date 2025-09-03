@@ -3,14 +3,9 @@
   "name": "VibePilot",
   "version": "1.0",
   "description": "Your AI agent for vibe-coding platforms.",
-  "permissions": ["scripting", "activeTab", "tabs"],
+  "permissions": ["activeTab", "scripting", "tabs"],
   "action": {
-    "default_popup": "index.html",
-    "default_icon": {
-      "16": "icon16.png",
-      "48": "icon48.png",
-      "128": "icon128.png"
-    }
+    "default_popup": "index.html"
   },
   "background": {
     "service_worker": "background.js"
@@ -20,10 +15,5 @@
       "matches": ["<all_urls>"],
       "js": ["content.js"]
     }
-  ],
-  "icons": {
-    "16": "icon16.png",
-    "48": "icon48.png",
-    "128": "icon128.png"
-  }
+  ]
 }
