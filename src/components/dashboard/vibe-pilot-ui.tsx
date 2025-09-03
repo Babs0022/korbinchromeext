@@ -13,7 +13,8 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '../ui/badge';
 import { Separator } from '../ui/separator';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 
 
 const VIBEPILOT_STATE_KEY = "vibepilot-state";
@@ -54,21 +55,16 @@ async function getDomSnapshot(): Promise<string> {
       chrome.scripting.executeScript(
         {
           target: { tabId: activeTab.id },
-          files: ['content/index.js'],
+          func: () => document.documentElement.outerHTML,
         },
-        async () => {
+        (results) => {
           if (chrome.runtime.lastError) {
-             console.log(`Script injection info: ${chrome.runtime.lastError.message}`);
+            return reject(new Error(chrome.runtime.lastError.message));
           }
-          try {
-            const response = await sendMessageToContentScript(activeTab.id!, { action: "get_dom" });
-            if (response && response.dom) {
-              resolve(response.dom);
-            } else {
-              reject(new Error('Failed to get DOM from content script. The content script might not be responding.'));
-            }
-          } catch(e) {
-            reject(e);
+          if (results && results[0] && results[0].result) {
+            resolve(results[0].result as string);
+          } else {
+            reject(new Error('Failed to get DOM from content script.'));
           }
         }
       );
@@ -122,15 +118,17 @@ const createNewSession = (): ChatSession => ({
 });
 
 
-export function VibePilotUI() {
+export function VibePilotUI({ activeSessionIdFromURL }: { activeSessionIdFromURL: string | null }) {
   const [appState, setAppState] = useState<VibePilotState | null>(null);
   const [confirmation, setConfirmation] = useState<{ log: LogEntry; onConfirm: () => void; onCancel: () => void; } | null>(null);
   const { toast } = useToast();
   const [isClient, setIsClient] = useState(false);
   const [inputValue, setInputValue] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  
-  const activeSession = appState?.sessions.find(s => s.id === appState.activeSessionId) || null;
+  const router = useRouter();
+
+  const activeSessionId = activeSessionIdFromURL || appState?.activeSessionId;
+  const activeSession = appState?.sessions.find(s => s.id === activeSessionId) || null;
 
   useEffect(() => {
     setIsClient(true);
@@ -148,13 +146,26 @@ export function VibePilotUI() {
               log.timestamp = new Date(log.timestamp);
             });
           });
-          setAppState(parsedState);
+
+          const sessionIdToUse = activeSessionIdFromURL || parsedState.activeSessionId;
+          const sessionExists = parsedState.sessions.some(s => s.id === sessionIdToUse);
+
+          if (sessionExists) {
+             setAppState({...parsedState, activeSessionId: sessionIdToUse});
+          } else {
+             const newSession = createNewSession();
+             const newState = { sessions: [...parsedState.sessions, newSession], activeSessionId: newSession.id };
+             setAppState(newState);
+             router.replace(`/?session=${newSession.id}`);
+          }
+
         } else {
           const newSession = createNewSession();
           setAppState({
             sessions: [newSession],
             activeSessionId: newSession.id,
           });
+          router.replace(`/?session=${newSession.id}`);
         }
       } catch (error) {
         console.error("Failed to parse state from localStorage", error);
@@ -163,9 +174,10 @@ export function VibePilotUI() {
           sessions: [newSession],
           activeSessionId: newSession.id,
         });
+        router.replace(`/?session=${newSession.id}`);
       }
     }
-  }, [isClient]);
+  }, [isClient, activeSessionIdFromURL, router]);
 
   useEffect(() => {
     if (isClient && appState) {
@@ -339,35 +351,17 @@ export function VibePilotUI() {
 
   const handleNewChat = () => {
     const newSession = createNewSession();
-    setAppState(prevState => ({
-      ...prevState!,
-      sessions: [newSession, ...prevState!.sessions],
-      activeSessionId: newSession.id,
-    }));
-  };
-
-  const handleSelectChat = (sessionId: string) => {
-    setAppState(prevState => ({ ...prevState!, activeSessionId: sessionId }));
-  };
-
-  const handleDeleteChat = (sessionId: string) => {
     setAppState(prevState => {
-      if (!prevState) return null;
-      const remainingSessions = prevState.sessions.filter(s => s.id !== sessionId);
-      if (remainingSessions.length === 0) {
-        const newSession = createNewSession();
-        return {
-          sessions: [newSession],
-          activeSessionId: newSession.id,
+        const newState = {
+            ...prevState!,
+            sessions: [newSession, ...prevState!.sessions],
+            activeSessionId: newSession.id,
         };
-      }
-      return {
-        ...prevState,
-        sessions: remainingSessions,
-        activeSessionId: prevState.activeSessionId === sessionId ? remainingSessions[0].id : prevState.activeSessionId,
-      };
+        return newState;
     });
+    router.push(`/?session=${newSession.id}`);
   };
+
 
   if (!isClient || !appState || !activeSession) {
     return (
@@ -398,22 +392,13 @@ export function VibePilotUI() {
       <header className="flex items-center justify-between p-3 border-b">
         <VibePilotLogo />
         <div className="flex items-center gap-3">
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="sm">
-                  <History className="mr-2" />
-                  History
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent>
-                {appState.sessions.map(session => (
-                  <DropdownMenuItem key={session.id} onClick={() => handleSelectChat(session.id)} disabled={session.id === activeSession.id}>
-                    {session.name}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
-
+            <Button variant="outline" size="sm" asChild>
+              <Link href="/history">
+                <History className="mr-2" />
+                History
+              </Link>
+            </Button>
+            
             <Button variant="outline" size="sm" onClick={handleNewChat}>
               <PlusCircle className="mr-2" />
               New Chat
