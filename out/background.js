@@ -1,0 +1,1 @@
+(()=>{"use strict";chrome.runtime.onInstalled.addListener(()=>{console.log("VibePilot extension installed.")}),chrome.runtime.onMessage.addListener((e,s,o)=>("log_message"===e.action&&console.log("Message from content script:",e.message),!0))})();
