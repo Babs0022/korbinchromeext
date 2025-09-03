@@ -222,10 +222,10 @@ export function VibePilotUI({ activeSessionIdFromURL }: { activeSessionIdFromURL
     if (!inputValue.trim() || !activeSession) return;
 
     const message = inputValue.trim();
+    const isFirstMessage = activeSession.logs.length === 0;
+
     addLogEntry(activeSession.id, { type: 'user', message: message });
     setInputValue('');
-
-    const isFirstMessage = activeSession.logs.length === 1;
 
     const newGoal = isFirstMessage ? message : `${activeSession.goal}\n\nUser instruction: ${message}`;
     updateSession(activeSession.id, { goal: newGoal });
@@ -394,13 +394,13 @@ export function VibePilotUI({ activeSessionIdFromURL }: { activeSessionIdFromURL
         <div className="flex items-center gap-3">
             <Button variant="outline" size="sm" asChild>
               <Link href="/history">
-                <History className="mr-2" />
+                <History className="mr-2 h-4 w-4" />
                 History
               </Link>
             </Button>
             
             <Button variant="outline" size="sm" onClick={handleNewChat}>
-              <PlusCircle className="mr-2" />
+              <PlusCircle className="mr-2 h-4 w-4" />
               New Chat
             </Button>
             
