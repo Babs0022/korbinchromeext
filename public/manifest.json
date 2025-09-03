@@ -1,0 +1,12 @@
+{
+  "manifest_version": 3,
+  "name": "VibePilot",
+  "version": "1.0",
+  "description": "Your AI agent for vibe-coding platforms.",
+  "action": {
+    "default_popup": "index.html"
+  },
+  "permissions": [
+    "storage"
+  ]
+}
