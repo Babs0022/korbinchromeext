@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
@@ -191,15 +190,13 @@ export function VibePilotUI() {
     addLogEntry({type: 'user', message: message});
     setInputValue('');
 
-    if (project.logs.length === 1) { // The first message is now the user's
-        updateProject({ goal: message, status: 'Running' });
-        addLogEntry({type: 'info', message: "Goal set. The agent will now start working towards it."});
-    } else {
-        // Subsequent messages can be instructions too, maybe trigger the agent
-        if (project.status !== 'Running') {
-          updateProject({ status: 'Running' });
-          addLogEntry({type: 'info', message: 'Agent activated by new instruction.'});
-        }
+    const newGoal = project.logs.length === 1 ? message : `${project.goal}\n\nUser instruction: ${message}`;
+    updateProject({ goal: newGoal });
+
+
+    if (project.status !== 'Running') {
+      updateProject({ status: 'Running' });
+      addLogEntry({type: 'info', message: 'Agent activated by new instruction.'});
     }
   }
 
@@ -223,13 +220,19 @@ export function VibePilotUI() {
 
       const newLog: Omit<LogEntry, 'id' | 'timestamp'> = {
         type: 'action',
-        message: `Next Action: ${result.action}`,
+        message: result.response,
         details: {
           action: result.action,
           details: result.actionDetails,
           reasoning: result.reasoning,
         },
       };
+      
+      if (result.action === 'none') {
+        addLogEntry(newLog);
+        updateProject({ status: 'Paused' });
+        return;
+      }
 
       const isRisky = result.action === 'delete' || result.action === 'publish' || result.action === 'deploy';
 
@@ -386,5 +389,3 @@ export function VibePilotUI() {
     </div>
   );
 }
-
-    

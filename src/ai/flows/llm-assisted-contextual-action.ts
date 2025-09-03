@@ -20,7 +20,8 @@ const LLMAssistedContextualActionInputSchema = z.object({
 export type LLMAssistedContextualActionInput = z.infer<typeof LLMAssistedContextualActionInputSchema>;
 
 const LLMAssistedContextualActionOutputSchema = z.object({
-  action: z.string().describe('The next action to execute (e.g., click, type, navigate), based on the DOM and project goals.'),
+  response: z.string().describe("A friendly, conversational response to the user explaining what action is being taken and why. This should not be technical jargon, but a natural language explanation."),
+  action: z.string().describe('The next action to execute (e.g., click, type, navigate, none), based on the DOM and project goals. Use "none" if no action is required or if you are just responding to the user.'),
   actionDetails: z.any().describe('A JSON object containing details for the action. For "click" or "type", this should include a "selector" key with a CSS selector. For "type", it should also include a "text" key.'),
   reasoning: z.string().describe('The LLM agent reasoning for taking that next action, based on the project goals and the dom inspection.'),
 });
@@ -36,8 +37,7 @@ const prompt = ai.definePrompt({
   output: {schema: LLMAssistedContextualActionOutputSchema},
   prompt: `You are an AI agent navigating a vibe-coding platform ({{{platform}}}) to achieve specific project goals for user {{{userId}}} on project {{{projectId}}}.
 
-  Your task is to analyze the current state of the DOM and determine the next best action to take to advance towards the project goals.
-  You must ALWAYS base your decision on the following:
+  Your task is to analyze the current state of the DOM and the user's goal to determine the next best action.
 
   1. The current DOM snapshot:
   ----------
@@ -49,15 +49,23 @@ const prompt = ai.definePrompt({
   {{{projectGoals}}}
   ----------
 
-  Based on the above information, what is the single, most logical next action to take?
+  Based on the above information, decide on the single, most logical next action to take. Actions can be "click", "type", "navigate", or "none".
 
-  Consider actions such as clicking buttons, typing into input fields, navigating to different pages, or any other interaction with the platform's UI.
+  In your response, you MUST provide two things:
+  1. A friendly, conversational "response" to the user. Explain what you are about to do and why, as if you were a helpful assistant. Do not use technical jargon.
+  2. The structured action plan (action, actionDetails, reasoning) to be executed by the system.
 
-  In your response, please provide the following information in JSON format:
+  Example: If the goal is "click the login button", your response might be:
+  - response: "Okay, I see the login button. I'll click it now to proceed."
+  - action: "click"
+  - actionDetails: { "selector": "button.login" }
+  - reasoning: "The user's goal is to log in, and the button with the 'login' class is the clear next step."
 
-  *   \"action\": A string describing the action to take (e.g., \"click\", \"type\", \"navigate\").
-  *   \"actionDetails\": A JSON object containing any details required to execute the action. The structure of this object will vary depending on the action. For example, if the action is \"click\", the actionDetails might include the CSS selector of the element to click. If the action is \"type\", it might include the CSS selector of the input field and the text to type.
-  *    \"reasoning\": Explain the detailed reasoning behind your action plan based on the project goals and current dom inspection.
+  If no action is needed, you can simply respond to the user.
+  - response: "I've analyzed the page, and it looks like we're already on the right track. What should I do next?"
+  - action: "none"
+  - actionDetails: {}
+  - reasoning: "The current page state aligns with the user's goal, so no immediate UI action is necessary."
 `,
 });
 
