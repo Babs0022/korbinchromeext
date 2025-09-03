@@ -5,7 +5,7 @@ export type ProjectStatus = 'Planning' | 'Running' | 'Paused' | 'Completed' | 'E
 export interface LogEntry {
   id: string;
   timestamp: Date;
-  type: 'plan' | 'action' | 'info' | 'error' | 'confirmation';
+  type: 'plan' | 'action' | 'info' | 'error' | 'confirmation' | 'user';
   message: string;
   details?: {
     action?: string;

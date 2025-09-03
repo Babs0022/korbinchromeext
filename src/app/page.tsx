@@ -1,9 +1,9 @@
-import { Dashboard } from '@/components/dashboard/dashboard';
+import { VibePilotUI } from '@/components/dashboard/vibe-pilot-ui';
 
 export default function Home() {
   return (
     <main>
-      <Dashboard />
+      <VibePilotUI />
     </main>
   );
 }
