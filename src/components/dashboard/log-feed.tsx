@@ -17,16 +17,16 @@ const logIcons = {
 };
 
 export function LogFeed({ logs }: { logs: LogEntry[] }) {
-  const scrollAreaRef = useRef<HTMLDivElement>(null);
+  const viewportRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (scrollAreaRef.current) {
-      scrollAreaRef.current.scrollTo({ top: scrollAreaRef.current.scrollHeight, behavior: 'smooth' });
+    if (viewportRef.current) {
+      viewportRef.current.scrollTo({ top: viewportRef.current.scrollHeight, behavior: 'smooth' });
     }
   }, [logs]);
 
   return (
-    <ScrollArea className="h-full flex-grow" viewportRef={scrollAreaRef}>
+    <ScrollArea className="h-full flex-grow" viewportRef={viewportRef}>
       <div className="p-4 space-y-4">
         {logs.map(log => (
           <div key={log.id} className="flex items-start gap-4">
