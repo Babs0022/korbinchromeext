@@ -17,6 +17,20 @@ import { Separator } from '../ui/separator';
 
 const DEFAULT_PROJECT_ID = "vibepilot-session";
 
+function sendMessageToContentScript(tabId: number, message: any): Promise<any> {
+  return new Promise((resolve, reject) => {
+    chrome.tabs.sendMessage(tabId, message, response => {
+      if (chrome.runtime.lastError) {
+        return reject(new Error(`Message sending failed: ${chrome.runtime.lastError.message}`));
+      }
+      if (response?.error) {
+        return reject(new Error(response.error));
+      }
+      resolve(response);
+    });
+  });
+}
+
 async function getDomSnapshot(): Promise<string> {
   return new Promise((resolve, reject) => {
     if (typeof chrome?.tabs?.query !== 'function') {
@@ -41,25 +55,62 @@ async function getDomSnapshot(): Promise<string> {
           target: { tabId: activeTab.id },
           files: ['content/index.js'],
         },
-        () => {
+        async () => {
           if (chrome.runtime.lastError) {
-             return reject(new Error(`Script injection failed: ${chrome.runtime.lastError.message}`));
+             // This error often means the script was already injected, which is fine.
+             console.log(`Script injection info: ${chrome.runtime.lastError.message}`);
           }
-          chrome.tabs.sendMessage(activeTab.id!, { action: "get_dom" }, (response) => {
-            if (chrome.runtime.lastError) {
-              return reject(new Error(`Message sending failed: ${chrome.runtime.lastError.message}`));
-            }
+          try {
+            const response = await sendMessageToContentScript(activeTab.id!, { action: "get_dom" });
             if (response && response.dom) {
               resolve(response.dom);
             } else {
-              reject(new Error('Failed to get DOM from content script.'));
+              reject(new Error('Failed to get DOM from content script. The content script might not be responding.'));
             }
-          });
+          } catch(e) {
+            reject(e);
+          }
         }
       );
     });
   });
 }
+
+async function executeActionInTab(action: string, details: any): Promise<any> {
+  return new Promise((resolve, reject) => {
+    if (typeof chrome?.tabs?.query !== 'function') {
+      console.warn('Not in a chrome extension context. Action not executed.');
+      return resolve({ status: 'success', message: `Simulated ${action} action.` });
+    }
+
+    chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {
+      if (chrome.runtime.lastError) {
+        return reject(new Error(chrome.runtime.lastError.message));
+      }
+      if (tabs.length === 0) {
+        return reject(new Error('No active tab found to execute action.'));
+      }
+      const activeTab = tabs[0];
+      if (!activeTab.id) {
+        return reject(new Error('Active tab has no ID.'));
+      }
+      
+      try {
+        const response = await sendMessageToContentScript(activeTab.id, {
+          action: 'execute_action',
+          payload: {
+            action,
+            details,
+          },
+        });
+        resolve(response);
+      } catch (e) {
+        reject(e);
+      }
+    });
+  });
+}
+
 
 export function VibePilotUI() {
   const [project, setProject] = useState<Project | null>(null);
@@ -140,9 +191,15 @@ export function VibePilotUI() {
     addLogEntry({type: 'user', message: message});
     setInputValue('');
 
-    if (project.logs.length === 0) {
+    if (project.logs.length === 1) { // The first message is now the user's
         updateProject({ goal: message, status: 'Running' });
         addLogEntry({type: 'info', message: "Goal set. The agent will now start working towards it."});
+    } else {
+        // Subsequent messages can be instructions too, maybe trigger the agent
+        if (project.status !== 'Running') {
+          updateProject({ status: 'Running' });
+          addLogEntry({type: 'info', message: 'Agent activated by new instruction.'});
+        }
     }
   }
 
@@ -181,9 +238,16 @@ export function VibePilotUI() {
         
         setConfirmation({
           log: { ...newLog, id: crypto.randomUUID(), timestamp: new Date() },
-          onConfirm: () => {
+          onConfirm: async () => {
              addLogEntry({ type: 'action', message: `User confirmed action: ${result.action}. Executing...`, details: newLog.details });
-             updateProject({ status: 'Running' });
+             try {
+                await executeActionInTab(result.action, result.actionDetails);
+                addLogEntry({type: 'info', message: `Action "${result.action}" executed successfully.`});
+                updateProject({ status: 'Running' });
+             } catch (e: any) {
+                addLogEntry({type: 'error', message: `Execution failed: ${e.message}`});
+                updateProject({ status: 'Error' });
+             }
              setConfirmation(null);
           },
           onCancel: () => {
@@ -196,6 +260,14 @@ export function VibePilotUI() {
 
       } else {
         addLogEntry(newLog);
+        try {
+          addLogEntry({ type: 'info', message: `Executing action: ${result.action}` });
+          await executeActionInTab(result.action, result.actionDetails);
+          addLogEntry({ type: 'info', message: `Action "${result.action}" executed successfully.` });
+        } catch (e: any) {
+          addLogEntry({type: 'error', message: `Execution failed: ${e.message}`});
+          updateProject({ status: 'Error' });
+        }
       }
     } catch (error) {
       console.error('Agent action failed:', error);
@@ -245,8 +317,10 @@ export function VibePilotUI() {
       Running: { text: "Running", Icon: Power, color: "text-green-500", badge: "default" },
       Paused: { text: "Paused", Icon: PowerOff, color: "text-gray-500", badge: "secondary" },
       Error: { text: "Error", Icon: AlertTriangle, color: "text-destructive", badge: "destructive" },
+      Completed: { text: "Completed", Icon: PowerOff, color: "text-gray-500", badge: "secondary" },
+      Planning: { text: "Planning", Icon: Power, color: "text-blue-500", badge: "default" }
   }
-  const currentStatus = statusConfig[project.status as 'Running' | 'Paused' | 'Error'] || statusConfig.Paused;
+  const currentStatus = statusConfig[project.status] || statusConfig.Paused;
 
   return (
     <div className="flex flex-col h-screen bg-background">
@@ -312,3 +386,5 @@ export function VibePilotUI() {
     </div>
   );
 }
+
+    
