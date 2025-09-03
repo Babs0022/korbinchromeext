@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Send, Power, PowerOff, AlertTriangle, PanelLeft } from 'lucide-react';
+import { Send, Power, PowerOff, AlertTriangle, PanelLeft, History, PlusCircle } from 'lucide-react';
 import { VibePilotLogo } from '@/components/VibePilotLogo';
 import type { ChatSession, VibePilotState, LogEntry, Platform } from '@/lib/types';
 import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction } from '@/components/ui/alert-dialog';
@@ -13,8 +13,8 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '../ui/badge';
 import { Separator } from '../ui/separator';
-import { SidebarProvider, Sidebar, SidebarTrigger, SidebarContent, SidebarHeader, SidebarInset } from '@/components/ui/sidebar';
-import { ChatHistory } from './chat-history';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
+
 
 const VIBEPILOT_STATE_KEY = "vibepilot-state";
 
@@ -382,86 +382,89 @@ export function VibePilotUI() {
   const currentStatus = statusConfig[activeSession.status] || statusConfig.Paused;
 
   return (
-    <SidebarProvider>
-      <Sidebar>
-        <SidebarContent>
-           <ChatHistory 
-              sessions={appState.sessions}
-              activeSessionId={appState.activeSessionId}
-              onNewChat={handleNewChat}
-              onSelectChat={handleSelectChat}
-              onDeleteChat={handleDeleteChat}
-           />
-        </SidebarContent>
-      </Sidebar>
-      <SidebarInset>
-        <div className="flex flex-col h-screen bg-background">
-          <header className="flex items-center justify-between p-3 border-b">
-            <div className="flex items-center gap-2">
-              <SidebarTrigger className="md:hidden">
-                <PanelLeft />
-              </SidebarTrigger>
-              <VibePilotLogo />
-            </div>
-            <div className="flex items-center gap-3">
-                <Badge variant={currentStatus.badge as any}>{currentStatus.text}</Badge>
-                <Button variant="ghost" size="icon" onClick={handleToggleAgent} className={currentStatus.color}>
-                    <currentStatus.Icon className="h-5 w-5" />
+    <div className="flex flex-col h-screen bg-background">
+      <header className="flex items-center justify-between p-3 border-b">
+        <VibePilotLogo />
+        <div className="flex items-center gap-3">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm">
+                  <History className="mr-2" />
+                  History
                 </Button>
-            </div>
-          </header>
-          
-          <div className="flex-grow min-h-0">
-            <LogFeed logs={activeSession.logs} />
-          </div>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent>
+                {appState.sessions.map(session => (
+                  <DropdownMenuItem key={session.id} onClick={() => handleSelectChat(session.id)} disabled={session.id === activeSession.id}>
+                    {session.name}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
 
-          <Separator />
+            <Button variant="outline" size="sm" onClick={handleNewChat}>
+              <PlusCircle className="mr-2" />
+              New Chat
+            </Button>
+            
+            <Separator orientation="vertical" className="h-6" />
 
-          <div className="p-4 bg-background">
-            <div className="relative">
-                <Textarea
-                  ref={textareaRef}
-                  value={inputValue}
-                  onChange={(e) => setInputValue(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  placeholder="Tell the agent what to do..."
-                  className="pr-12 resize-none"
-                  rows={1}
-                />
-                <Button 
-                    type="submit" 
-                    size="icon" 
-                    className="absolute right-2 top-1/2 -translate-y-1/2 h-8 w-8"
-                    onClick={handleSendMessage}
-                    disabled={!inputValue.trim()}
-                >
-                    <Send className="h-4 w-4" />
-                </Button>
-            </div>
-          </div>
-
-          {confirmation && (
-            <AlertDialog open={!!confirmation}>
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>Confirmation Required</AlertDialogTitle>
-                  <AlertDialogDescription>
-                    The agent wants to perform a potentially irreversible action: <strong className="text-destructive">{confirmation.log.details?.action}</strong>.
-                    <br/>
-                    Reasoning: <em>{confirmation.log.details?.reasoning}</em>
-                    <br/><br/>
-                    Do you want to proceed?
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel onClick={confirmation.onCancel}>Cancel</AlertDialogCancel>
-                  <AlertDialogAction onClick={confirmation.onConfirm} className="bg-destructive hover:bg-destructive/90">Proceed</AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
-          )}
+            <Badge variant={currentStatus.badge as any}>{currentStatus.text}</Badge>
+            <Button variant="ghost" size="icon" onClick={handleToggleAgent} className={currentStatus.color}>
+                <currentStatus.Icon className="h-5 w-5" />
+            </Button>
         </div>
-      </SidebarInset>
-    </SidebarProvider>
+      </header>
+      
+      <div className="flex-grow min-h-0">
+        <LogFeed logs={activeSession.logs} />
+      </div>
+
+      <Separator />
+
+      <div className="p-4 bg-background">
+        <div className="relative">
+            <Textarea
+              ref={textareaRef}
+              value={inputValue}
+              onChange={(e) => setInputValue(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="Tell the agent what to do..."
+              className="pr-12 resize-none"
+              rows={1}
+            />
+            <Button 
+                type="submit" 
+                size="icon" 
+                className="absolute right-2 top-1/2 -translate-y-1/2 h-8 w-8"
+                onClick={handleSendMessage}
+                disabled={!inputValue.trim()}
+            >
+                <Send className="h-4 w-4" />
+            </Button>
+        </div>
+      </div>
+
+      {confirmation && (
+        <AlertDialog open={!!confirmation}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Confirmation Required</AlertDialogTitle>
+              <AlertDialogDescription>
+                The agent wants to perform a potentially irreversible action: <strong className="text-destructive">{confirmation.log.details?.action}</strong>.
+                <br/>
+                Reasoning: <em>{confirmation.log.details?.reasoning}</em>
+                <br/><br/>
+                Do you want to proceed?
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel onClick={confirmation.onCancel}>Cancel</AlertDialogCancel>
+              <AlertDialogAction onClick={confirmation.onConfirm} className="bg-destructive hover:bg-destructive/90">Proceed</AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      )}
+    </div>
   );
 }
