@@ -6,8 +6,8 @@ import { VibePilotLogo } from '@/components/VibePilotLogo';
 import type { ChatSession, VibePilotState, LogEntry, Platform } from '@/lib/types';
 import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction } from '@/components/ui/alert-dialog';
 import { useToast } from '@/hooks/use-toast';
-import { planProject } from '@/ai/flows/llm-assisted-project-planning';
 import { llmAssistedContextualAction, LLMAssistedContextualActionOutput } from '@/ai/flows/llm-assisted-contextual-action';
+import { generateChatName } from '@/ai/flows/llm-generate-chat-name';
 import { LogFeed } from './log-feed';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -206,23 +206,35 @@ export function VibePilotUI() {
     });
   }, []);
   
-  const handleSendMessage = () => {
+  const handleSendMessage = async () => {
     if (!inputValue.trim() || !activeSession) return;
-    
+
     const message = inputValue.trim();
-    addLogEntry(activeSession.id, {type: 'user', message: message});
+    addLogEntry(activeSession.id, { type: 'user', message: message });
     setInputValue('');
 
-    const newGoal = activeSession.logs.length === 1 ? message : `${activeSession.goal}\n\nUser instruction: ${message}`;
-    const sessionName = activeSession.logs.length === 1 ? message.substring(0, 30) + (message.length > 30 ? '...' : '') : activeSession.name;
-    updateSession(activeSession.id, { goal: newGoal, name: sessionName });
+    const isFirstMessage = activeSession.logs.length === 1;
 
+    const newGoal = isFirstMessage ? message : `${activeSession.goal}\n\nUser instruction: ${message}`;
+    updateSession(activeSession.id, { goal: newGoal });
+
+    if (isFirstMessage) {
+        try {
+            const { name } = await generateChatName({ message });
+            updateSession(activeSession.id, { name });
+        } catch (error) {
+            console.error("Failed to generate chat name:", error);
+            // Fallback to a generic name or the start of the message
+            const fallbackName = message.substring(0, 30) + (message.length > 30 ? '...' : '');
+            updateSession(activeSession.id, { name: fallbackName });
+        }
+    }
 
     if (activeSession.status !== 'Running') {
-      updateSession(activeSession.id, { status: 'Running' });
-      addLogEntry(activeSession.id, {type: 'info', message: 'Agent activated by new instruction.'});
+        updateSession(activeSession.id, { status: 'Running' });
+        addLogEntry(activeSession.id, { type: 'info', message: 'Agent activated by new instruction.' });
     }
-  };
+};
 
   const runAgent = useCallback(async (session: ChatSession) => {
     if (session.status !== 'Running') return;
