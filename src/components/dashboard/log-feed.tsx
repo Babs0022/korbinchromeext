@@ -30,7 +30,7 @@ function LogItem({ log }: { log: LogEntry }) {
         <span className={cn("text-xs opacity-70 mt-1 block", isUser ? "text-right" : "text-left")}>
             {formatDistanceToNow(log.timestamp, { addSuffix: true })}
         </span>
-         {hasDetails && (
+         {hasDetails && log.details && (
           <Collapsible open={isOpen} onOpenChange={setIsOpen} className="mt-2">
             <CollapsibleContent className="mt-2 text-xs p-3 bg-background/50 rounded-md font-code space-y-1">
                 <p><strong>Action:</strong> {log.details.action}</p>

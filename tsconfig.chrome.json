@@ -1,0 +1,13 @@
+{
+  "compilerOptions": {
+    "target": "es6",
+    "module": "commonjs",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "outDir": "./out",
+    "types": ["chrome"]
+  },
+  "include": ["src/background/**/*.ts", "src/content/**/*.ts"]
+}
