@@ -23,6 +23,50 @@ import { useToast } from '@/hooks/use-toast';
 import { planProject } from '@/ai/flows/llm-assisted-project-planning';
 import { llmAssistedContextualAction, LLMAssistedContextualActionOutput } from '@/ai/flows/llm-assisted-contextual-action';
 
+async function getDomSnapshot(): Promise<string> {
+  return new Promise((resolve, reject) => {
+    if (typeof chrome?.tabs?.query !== 'function') {
+      console.warn('Not in a chrome extension context. Returning placeholder DOM.');
+      return resolve('<body><p>This is a placeholder DOM. Run in extension context to see real page content.</p></body>');
+    }
+
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      if (chrome.runtime.lastError) {
+        return reject(new Error(chrome.runtime.lastError.message));
+      }
+      if (tabs.length === 0) {
+        return reject(new Error('No active tab found.'));
+      }
+      const activeTab = tabs[0];
+      if (!activeTab.id) {
+        return reject(new Error('Active tab has no ID.'));
+      }
+
+      chrome.scripting.executeScript(
+        {
+          target: { tabId: activeTab.id },
+          files: ['content/index.js'],
+        },
+        () => {
+          if (chrome.runtime.lastError) {
+             return reject(new Error(`Script injection failed: ${chrome.runtime.lastError.message}`));
+          }
+          chrome.tabs.sendMessage(activeTab.id!, { action: "get_dom" }, (response) => {
+            if (chrome.runtime.lastError) {
+              return reject(new Error(`Message sending failed: ${chrome.runtime.lastError.message}`));
+            }
+            if (response && response.dom) {
+              resolve(response.dom);
+            } else {
+              reject(new Error('Failed to get DOM from content script.'));
+            }
+          });
+        }
+      );
+    });
+  });
+}
+
 export function Dashboard() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
@@ -99,8 +143,9 @@ export function Dashboard() {
     addLogEntry(project.id, { type: 'info', message: 'Agent is thinking...' });
 
     try {
-      // In a real scenario, we would pass a real DOM snapshot.
-      const domSnapshot = "<body>...</body>";
+      addLogEntry(project.id, { type: 'info', message: 'Capturing page content...' });
+      const domSnapshot = await getDomSnapshot();
+      addLogEntry(project.id, { type: 'info', message: 'Page content captured. Analyzing...' });
       
       const result: LLMAssistedContextualActionOutput = await llmAssistedContextualAction({
         domSnapshot,
@@ -163,7 +208,8 @@ export function Dashboard() {
   // Agent simulation loop
   useEffect(() => {
     if (selectedProject?.status === 'Running') {
-      runAgent(selectedProject);
+      const timer = setTimeout(() => runAgent(selectedProject), 2000); // Add a small delay
+      return () => clearTimeout(timer);
     }
   }, [selectedProject, runAgent]);
 
@@ -187,9 +233,11 @@ export function Dashboard() {
     addLogEntry(newProject.id, { type: 'info', message: `Planning project "${newProject.name}"...` });
 
     try {
+      const domSnapshot = await getDomSnapshot();
       const plan = await planProject({
         platform: data.platform,
         goal: data.goal,
+        domSnapshot,
       });
 
       plan.steps.forEach((step, index) => {

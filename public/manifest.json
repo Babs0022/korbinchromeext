@@ -6,7 +6,9 @@
   "action": {
     "default_popup": "index.html"
   },
-  "permissions": [
-    "storage"
-  ]
+  "permissions": ["activeTab", "tabs", "scripting"],
+  "host_permissions": ["<all_urls>"],
+  "background": {
+    "service_worker": "background/index.js"
+  }
 }
