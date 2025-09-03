@@ -1,9 +1,9 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Send, Power, PowerOff, AlertTriangle } from 'lucide-react';
+import { Send, Power, PowerOff, AlertTriangle, PanelLeft } from 'lucide-react';
 import { VibePilotLogo } from '@/components/VibePilotLogo';
-import type { Project, LogEntry, Platform } from '@/lib/types';
+import type { ChatSession, VibePilotState, LogEntry, Platform } from '@/lib/types';
 import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction } from '@/components/ui/alert-dialog';
 import { useToast } from '@/hooks/use-toast';
 import { planProject } from '@/ai/flows/llm-assisted-project-planning';
@@ -13,8 +13,10 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '../ui/badge';
 import { Separator } from '../ui/separator';
+import { SidebarProvider, Sidebar, SidebarTrigger, SidebarContent, SidebarHeader, SidebarInset } from '@/components/ui/sidebar';
+import { ChatHistory } from './chat-history';
 
-const DEFAULT_PROJECT_ID = "vibepilot-session";
+const VIBEPILOT_STATE_KEY = "vibepilot-state";
 
 function sendMessageToContentScript(tabId: number, message: any): Promise<any> {
   return new Promise((resolve, reject) => {
@@ -56,7 +58,6 @@ async function getDomSnapshot(): Promise<string> {
         },
         async () => {
           if (chrome.runtime.lastError) {
-             // This error often means the script was already injected, which is fine.
              console.log(`Script injection info: ${chrome.runtime.lastError.message}`);
           }
           try {
@@ -110,14 +111,26 @@ async function executeActionInTab(action: string, details: any): Promise<any> {
   });
 }
 
+const createNewSession = (): ChatSession => ({
+  id: crypto.randomUUID(),
+  name: "New Chat",
+  goal: "No goal set. Start by sending a message.",
+  platform: 'Firebase',
+  status: 'Paused',
+  logs: [],
+  lastUpdated: new Date(),
+});
+
 
 export function VibePilotUI() {
-  const [project, setProject] = useState<Project | null>(null);
+  const [appState, setAppState] = useState<VibePilotState | null>(null);
   const [confirmation, setConfirmation] = useState<{ log: LogEntry; onConfirm: () => void; onCancel: () => void; } | null>(null);
   const { toast } = useToast();
   const [isClient, setIsClient] = useState(false);
   const [inputValue, setInputValue] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  
+  const activeSession = appState?.sessions.find(s => s.id === appState.activeSessionId) || null;
 
   useEffect(() => {
     setIsClient(true);
@@ -126,96 +139,107 @@ export function VibePilotUI() {
   useEffect(() => {
     if (isClient) {
       try {
-        const storedProject = localStorage.getItem(DEFAULT_PROJECT_ID);
-        if (storedProject) {
-          const parsedProject: Project = JSON.parse(storedProject);
-          parsedProject.lastUpdated = new Date(parsedProject.lastUpdated);
-          parsedProject.logs = parsedProject.logs.map((l: any) => ({
-            ...l,
-            timestamp: new Date(l.timestamp),
-          }));
-          setProject(parsedProject);
+        const storedState = localStorage.getItem(VIBEPILOT_STATE_KEY);
+        if (storedState) {
+          const parsedState: VibePilotState = JSON.parse(storedState);
+          parsedState.sessions.forEach(session => {
+            session.lastUpdated = new Date(session.lastUpdated);
+            session.logs.forEach(log => {
+              log.timestamp = new Date(log.timestamp);
+            });
+          });
+          setAppState(parsedState);
         } else {
-          // Create a default project if none exists
-           const newProject: Project = {
-              id: DEFAULT_PROJECT_ID,
-              name: "VibePilot Session",
-              goal: "No goal set. Start by sending a message.",
-              platform: 'Firebase',
-              status: 'Paused',
-              currentStep: 0,
-              totalSteps: 0,
-              logs: [],
-              lastUpdated: new Date(),
-           };
-           setProject(newProject);
+          const newSession = createNewSession();
+          setAppState({
+            sessions: [newSession],
+            activeSessionId: newSession.id,
+          });
         }
       } catch (error) {
-        console.error("Failed to parse project from localStorage", error);
+        console.error("Failed to parse state from localStorage", error);
+        const newSession = createNewSession();
+        setAppState({
+          sessions: [newSession],
+          activeSessionId: newSession.id,
+        });
       }
     }
   }, [isClient]);
 
   useEffect(() => {
-    if (isClient && project) {
-      localStorage.setItem(DEFAULT_PROJECT_ID, JSON.stringify(project));
+    if (isClient && appState) {
+      localStorage.setItem(VIBEPILOT_STATE_KEY, JSON.stringify(appState));
     }
-  }, [project, isClient]);
+  }, [appState, isClient]);
 
-  const updateProject = useCallback((updates: Partial<Project>) => {
-    setProject(prevProject => {
-        if (!prevProject) return null;
-        return { ...prevProject, ...updates, lastUpdated: new Date() };
+  const updateSession = useCallback((sessionId: string, updates: Partial<ChatSession>) => {
+    setAppState(prevState => {
+      if (!prevState) return null;
+      return {
+        ...prevState,
+        sessions: prevState.sessions.map(session =>
+          session.id === sessionId ? { ...session, ...updates, lastUpdated: new Date() } : session
+        ),
+      };
     });
   }, []);
   
-  const addLogEntry = useCallback((log: Omit<LogEntry, 'id' | 'timestamp'>) => {
-    setProject(prevProject => {
-      if (!prevProject) return prevProject;
-
+  const addLogEntry = useCallback((sessionId: string, log: Omit<LogEntry, 'id' | 'timestamp'>) => {
+    setAppState(prevState => {
+      if (!prevState) return prevState;
+      
       const newLog: LogEntry = {
         id: crypto.randomUUID(),
         timestamp: new Date(),
         ...log
       };
       
-      return { ...prevProject, logs: [...prevProject.logs, newLog], lastUpdated: new Date() };
+      return {
+        ...prevState,
+        sessions: prevState.sessions.map(session => 
+          session.id === sessionId 
+            ? { ...session, logs: [...session.logs, newLog], lastUpdated: new Date() }
+            : session
+        )
+      };
     });
   }, []);
   
   const handleSendMessage = () => {
-    if (!inputValue.trim() || !project) return;
+    if (!inputValue.trim() || !activeSession) return;
     
     const message = inputValue.trim();
-    addLogEntry({type: 'user', message: message});
+    addLogEntry(activeSession.id, {type: 'user', message: message});
     setInputValue('');
 
-    const newGoal = project.logs.length === 1 ? message : `${project.goal}\n\nUser instruction: ${message}`;
-    updateProject({ goal: newGoal });
+    const newGoal = activeSession.logs.length === 1 ? message : `${activeSession.goal}\n\nUser instruction: ${message}`;
+    const sessionName = activeSession.logs.length === 1 ? message.substring(0, 30) + (message.length > 30 ? '...' : '') : activeSession.name;
+    updateSession(activeSession.id, { goal: newGoal, name: sessionName });
 
 
-    if (project.status !== 'Running') {
-      updateProject({ status: 'Running' });
-      addLogEntry({type: 'info', message: 'Agent activated by new instruction.'});
+    if (activeSession.status !== 'Running') {
+      updateSession(activeSession.id, { status: 'Running' });
+      addLogEntry(activeSession.id, {type: 'info', message: 'Agent activated by new instruction.'});
     }
-  }
+  };
 
-  const runAgent = useCallback(async (project: Project) => {
-    if (project.status !== 'Running') return;
+  const runAgent = useCallback(async (session: ChatSession) => {
+    if (session.status !== 'Running') return;
 
-    addLogEntry({ type: 'info', message: 'Agent is thinking...' });
+    addLogEntry(session.id, { type: 'info', message: 'Agent is thinking...' });
 
     try {
-      addLogEntry({ type: 'info', message: 'Capturing page content...' });
+      addLogEntry(session.id, { type: 'info', message: 'Capturing page content...' });
       const domSnapshot = await getDomSnapshot();
-      addLogEntry({ type: 'info', message: 'Page content captured. Analyzing...' });
+      addLogEntry(session.id, { type: 'info', message: 'Page content captured. Analyzing...' });
       
       const result: LLMAssistedContextualActionOutput = await llmAssistedContextualAction({
         domSnapshot,
-        projectGoals: project.goal,
-        platform: project.platform,
+        projectGoals: session.goal,
+        platform: session.platform,
         userId: 'user@vibepilot.ai',
-        projectId: project.id,
+        projectId: session.id,
       });
 
       const newLog: Omit<LogEntry, 'id' | 'timestamp'> = {
@@ -229,79 +253,111 @@ export function VibePilotUI() {
       };
       
       if (result.action === 'none') {
-        addLogEntry(newLog);
-        updateProject({ status: 'Paused' });
+        addLogEntry(session.id, newLog);
+        updateSession(session.id, { status: 'Paused' });
         return;
       }
 
       const isRisky = result.action === 'delete' || result.action === 'publish' || result.action === 'deploy';
 
       if (isRisky) {
-        updateProject({ status: 'Paused' });
+        updateSession(session.id, { status: 'Paused' });
         
         setConfirmation({
           log: { ...newLog, id: crypto.randomUUID(), timestamp: new Date() },
           onConfirm: async () => {
-             addLogEntry({ type: 'action', message: `User confirmed action: ${result.action}. Executing...`, details: newLog.details });
+             addLogEntry(session.id, { type: 'action', message: `User confirmed action: ${result.action}. Executing...`, details: newLog.details });
              try {
                 await executeActionInTab(result.action, result.actionDetails);
-                addLogEntry({type: 'info', message: `Action "${result.action}" executed successfully.`});
-                updateProject({ status: 'Running' });
+                addLogEntry(session.id, {type: 'info', message: `Action "${result.action}" executed successfully.`});
+                updateSession(session.id, { status: 'Running' });
              } catch (e: any) {
-                addLogEntry({type: 'error', message: `Execution failed: ${e.message}`});
-                updateProject({ status: 'Error' });
+                addLogEntry(session.id, {type: 'error', message: `Execution failed: ${e.message}`});
+                updateSession(session.id, { status: 'Error' });
              }
              setConfirmation(null);
           },
           onCancel: () => {
-            addLogEntry({ type: 'info', message: `User cancelled action: ${result.action}.`});
-            updateProject({ status: 'Paused' });
+            addLogEntry(session.id, { type: 'info', message: `User cancelled action: ${result.action}.`});
+            updateSession(session.id, { status: 'Paused' });
             setConfirmation(null);
             toast({ title: "Action Cancelled", description: `Agent is paused.`, variant: 'destructive'});
           }
         });
 
       } else {
-        addLogEntry(newLog);
+        addLogEntry(session.id, newLog);
         try {
-          addLogEntry({ type: 'info', message: `Executing action: ${result.action}` });
+          addLogEntry(session.id, { type: 'info', message: `Executing action: ${result.action}` });
           await executeActionInTab(result.action, result.actionDetails);
-          addLogEntry({ type: 'info', message: `Action "${result.action}" executed successfully.` });
+          addLogEntry(session.id, { type: 'info', message: `Action "${result.action}" executed successfully.` });
         } catch (e: any) {
-          addLogEntry({type: 'error', message: `Execution failed: ${e.message}`});
-          updateProject({ status: 'Error' });
+          addLogEntry(session.id, {type: 'error', message: `Execution failed: ${e.message}`});
+          updateSession(session.id, { status: 'Error' });
         }
       }
     } catch (error) {
       console.error('Agent action failed:', error);
       const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred.';
-      addLogEntry({ type: 'error', message: `Agent failed: ${errorMessage}` });
-      updateProject({ status: 'Error' });
+      addLogEntry(session.id, { type: 'error', message: `Agent failed: ${errorMessage}` });
+      updateSession(session.id, { status: 'Error' });
       toast({ title: "Agent Error", description: "The agent encountered an error.", variant: 'destructive' });
     }
-  }, [addLogEntry, updateProject, toast]);
+  }, [addLogEntry, updateSession, toast]);
   
   useEffect(() => {
-    if (project?.status === 'Running') {
-      const timer = setTimeout(() => runAgent(project), 5000); // Wait 5s between actions
+    if (activeSession?.status === 'Running') {
+      const timer = setTimeout(() => runAgent(activeSession), 5000); // Wait 5s between actions
       return () => clearTimeout(timer);
     }
-  }, [project, runAgent]);
+  }, [activeSession, runAgent]);
   
   const handleToggleAgent = () => {
-      if (!project) return;
-    if (project.status === 'Running') {
-      updateProject({ status: 'Paused' });
-      addLogEntry({type: 'info', message: 'Agent paused by user.'});
+    if (!activeSession) return;
+    if (activeSession.status === 'Running') {
+      updateSession(activeSession.id, { status: 'Paused' });
+      addLogEntry(activeSession.id, {type: 'info', message: 'Agent paused by user.'});
       toast({ title: 'Agent Paused'});
-    } else if (project.status === 'Paused' || project.status === 'Error') {
-      updateProject({ status: 'Running' });
-      addLogEntry({type: 'info', message: 'Agent started by user.'});
+    } else if (activeSession.status === 'Paused' || activeSession.status === 'Error') {
+      updateSession(activeSession.id, { status: 'Running' });
+      addLogEntry(activeSession.id, {type: 'info', message: 'Agent started by user.'});
       toast({ title: 'Agent Resumed'});
     }
   };
 
-  if (!isClient || !project) {
+  const handleNewChat = () => {
+    const newSession = createNewSession();
+    setAppState(prevState => ({
+      ...prevState!,
+      sessions: [newSession, ...prevState!.sessions],
+      activeSessionId: newSession.id,
+    }));
+  };
+
+  const handleSelectChat = (sessionId: string) => {
+    setAppState(prevState => ({ ...prevState!, activeSessionId: sessionId }));
+  };
+
+  const handleDeleteChat = (sessionId: string) => {
+    setAppState(prevState => {
+      if (!prevState) return null;
+      const remainingSessions = prevState.sessions.filter(s => s.id !== sessionId);
+      if (remainingSessions.length === 0) {
+        const newSession = createNewSession();
+        return {
+          sessions: [newSession],
+          activeSessionId: newSession.id,
+        };
+      }
+      return {
+        ...prevState,
+        sessions: remainingSessions,
+        activeSessionId: prevState.activeSessionId === sessionId ? remainingSessions[0].id : prevState.activeSessionId,
+      };
+    });
+  };
+
+  if (!isClient || !appState || !activeSession) {
     return (
         <div className="flex h-screen w-screen items-center justify-center">
             <VibePilotLogo />
@@ -323,69 +379,89 @@ export function VibePilotUI() {
       Completed: { text: "Completed", Icon: PowerOff, color: "text-gray-500", badge: "secondary" },
       Planning: { text: "Planning", Icon: Power, color: "text-blue-500", badge: "default" }
   }
-  const currentStatus = statusConfig[project.status] || statusConfig.Paused;
+  const currentStatus = statusConfig[activeSession.status] || statusConfig.Paused;
 
   return (
-    <div className="flex flex-col h-screen bg-background">
-      <header className="flex items-center justify-between p-3 border-b">
-        <VibePilotLogo />
-        <div className="flex items-center gap-3">
-             <Badge variant={currentStatus.badge as any}>{currentStatus.text}</Badge>
-            <Button variant="ghost" size="icon" onClick={handleToggleAgent} className={currentStatus.color}>
-                <currentStatus.Icon className="h-5 w-5" />
-            </Button>
+    <SidebarProvider>
+      <Sidebar>
+        <SidebarContent>
+           <ChatHistory 
+              sessions={appState.sessions}
+              activeSessionId={appState.activeSessionId}
+              onNewChat={handleNewChat}
+              onSelectChat={handleSelectChat}
+              onDeleteChat={handleDeleteChat}
+           />
+        </SidebarContent>
+      </Sidebar>
+      <SidebarInset>
+        <div className="flex flex-col h-screen bg-background">
+          <header className="flex items-center justify-between p-3 border-b">
+            <div className="flex items-center gap-2">
+              <SidebarTrigger className="md:hidden">
+                <PanelLeft />
+              </SidebarTrigger>
+              <VibePilotLogo />
+            </div>
+            <div className="flex items-center gap-3">
+                <Badge variant={currentStatus.badge as any}>{currentStatus.text}</Badge>
+                <Button variant="ghost" size="icon" onClick={handleToggleAgent} className={currentStatus.color}>
+                    <currentStatus.Icon className="h-5 w-5" />
+                </Button>
+            </div>
+          </header>
+          
+          <div className="flex-grow min-h-0">
+            <LogFeed logs={activeSession.logs} />
+          </div>
+
+          <Separator />
+
+          <div className="p-4 bg-background">
+            <div className="relative">
+                <Textarea
+                  ref={textareaRef}
+                  value={inputValue}
+                  onChange={(e) => setInputValue(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  placeholder="Tell the agent what to do..."
+                  className="pr-12 resize-none"
+                  rows={1}
+                />
+                <Button 
+                    type="submit" 
+                    size="icon" 
+                    className="absolute right-2 top-1/2 -translate-y-1/2 h-8 w-8"
+                    onClick={handleSendMessage}
+                    disabled={!inputValue.trim()}
+                >
+                    <Send className="h-4 w-4" />
+                </Button>
+            </div>
+          </div>
+
+          {confirmation && (
+            <AlertDialog open={!!confirmation}>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Confirmation Required</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    The agent wants to perform a potentially irreversible action: <strong className="text-destructive">{confirmation.log.details?.action}</strong>.
+                    <br/>
+                    Reasoning: <em>{confirmation.log.details?.reasoning}</em>
+                    <br/><br/>
+                    Do you want to proceed?
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel onClick={confirmation.onCancel}>Cancel</AlertDialogCancel>
+                  <AlertDialogAction onClick={confirmation.onConfirm} className="bg-destructive hover:bg-destructive/90">Proceed</AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          )}
         </div>
-      </header>
-      
-      <div className="flex-grow min-h-0">
-        <LogFeed logs={project.logs} />
-      </div>
-
-      <Separator />
-
-      <div className="p-4 bg-background">
-        <div className="relative">
-            <Textarea
-              ref={textareaRef}
-              value={inputValue}
-              onChange={(e) => setInputValue(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="Tell the agent what to do..."
-              className="pr-12 resize-none"
-              rows={1}
-            />
-            <Button 
-                type="submit" 
-                size="icon" 
-                className="absolute right-2 top-1/2 -translate-y-1/2 h-8 w-8"
-                onClick={handleSendMessage}
-                disabled={!inputValue.trim()}
-            >
-                <Send className="h-4 w-4" />
-            </Button>
-        </div>
-      </div>
-
-      {confirmation && (
-        <AlertDialog open={!!confirmation}>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Confirmation Required</AlertDialogTitle>
-              <AlertDialogDescription>
-                The agent wants to perform a potentially irreversible action: <strong className="text-destructive">{confirmation.log.details?.action}</strong>.
-                <br/>
-                Reasoning: <em>{confirmation.log.details?.reasoning}</em>
-                <br/><br/>
-                Do you want to proceed?
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel onClick={confirmation.onCancel}>Cancel</AlertDialogCancel>
-              <AlertDialogAction onClick={confirmation.onConfirm} className="bg-destructive hover:bg-destructive/90">Proceed</AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-      )}
-    </div>
+      </SidebarInset>
+    </SidebarProvider>
   );
 }

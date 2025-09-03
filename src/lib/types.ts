@@ -14,14 +14,17 @@ export interface LogEntry {
   };
 }
 
-export interface Project {
+export interface ChatSession {
   id: string;
   name: string;
   goal: string;
   platform: Platform;
   status: ProjectStatus;
-  currentStep: number;
-  totalSteps: number;
   logs: LogEntry[];
   lastUpdated: Date;
+}
+
+export interface VibePilotState {
+  sessions: ChatSession[];
+  activeSessionId: string;
 }
